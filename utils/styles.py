@@ -374,7 +374,7 @@ _CSS = """
      Page header
   ───────────────────────────────────────────────────────────── */
   .header-strip {
-    padding: 6em 0 22px 0;
+    padding: 3em 0 22px 0;
     border-bottom: 1px solid var(--border);
     margin-bottom: 22px;
   }
