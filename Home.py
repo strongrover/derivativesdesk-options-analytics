@@ -145,7 +145,7 @@ col1, col2 = st.columns([2.2, 1], gap="large")
 with col1:
     st.markdown("""
     <div class="project-card">
-        <div class="project-title">QuantDesk - Options Pricing & Risk Analytics Platform</div>
+        <div class="project-title">DerivDesk - Options Pricing & Risk Analytics Platform</div>
         <div class="project-text">
             End-to-end derivatives analytics platform covering pricing, volatility modeling,
             risk simulation, scenario analysis, and structured products on CAC 40 equities.
@@ -165,14 +165,92 @@ with col2:
     st.write("")
     st.write("")
 
-    if st.button("Explore QuantDesk", use_container_width=True, type="primary"):
-        st.switch_page("pages/QuantDesk.py")
+    if "show_project_summary" not in st.session_state:
+        st.session_state.show_project_summary = False
+    if "show_methodology" not in st.session_state:
+        st.session_state.show_methodology = False
+
+    if st.button("Explore DerivDesk", use_container_width=True, type="primary"):
+        st.switch_page("pages/DerivDesk.py")
 
     if st.button("Project Summary", use_container_width=True):
-        st.info("Link to PDF or summary later")
+        st.session_state.show_project_summary = not st.session_state.show_project_summary
+    if st.session_state.show_project_summary:
+        st.markdown("""
+    ### QuantDesk — Project Summary
+
+    QuantDesk is an end-to-end derivatives analytics platform designed to replicate how a trading desk approaches option pricing, volatility, and risk.
+
+    The platform integrates analytical pricing models with simulation-based methods to provide a unified view of valuation and risk exposure.
+
+    **Key Capabilities**
+    - Black-Scholes pricing with full Greeks (Delta, Gamma, Theta, Vega, Rho)
+    - Higher-order sensitivities (Vanna, Charm, Volga)
+    - Implied volatility surface modelling (skew & smile)
+    - Scenario analysis across spot and volatility shocks
+    - Monte Carlo simulation for structured products (Phoenix autocall)
+    - Digital option pricing with probability interpretation
+
+    **Objective**
+    To bridge the gap between theoretical derivatives models and practical, desk-oriented risk analysis tools.
+
+    **Scope**
+    Focused on CAC 40 equities with live market data integration and fallback robustness.
+    """)
 
     if st.button("Methodology", use_container_width=True):
-        st.info("Explain Black-Scholes, Greeks, Monte Carlo")
+        st.session_state.show_methodology = not st.session_state.show_methodology
+    if st.session_state.show_methodology:
+        st.markdown("""
+    ### Methodology
+
+    **Vanilla Options (Closed-Form)**  
+    For European options where the payoff depends solely on \( S_T \), pricing is based on the analytical Black–Scholes–Merton framework:
+
+    $$
+    C(S,t) = S e^{-qT} N(d_1) - K e^{-rT} N(d_2)
+    $$
+
+    where:
+
+    $$
+    d_1 = \\frac{\\ln(S/K) + (r - q + 0.5\\sigma^2)T}{\\sigma \\sqrt{T}}, \\quad
+    d_2 = d_1 - \\sigma \\sqrt{T}
+    $$
+
+    ---
+
+    **Greeks Computation**  
+    Sensitivities are derived analytically to measure exposure to the main option risk factors:
+
+    $$
+    \\Delta = e^{-qT} N(d_1), \\quad
+    \\Gamma = \\frac{e^{-qT} \\phi(d_1)}{S \\sigma \\sqrt{T}}, \\quad
+    \\Vega = S e^{-qT} \\phi(d_1) \\sqrt{T}
+    $$
+
+    $$
+    \\Theta = -\\frac{S e^{-qT} \\phi(d_1) \\sigma}{2\\sqrt{T}}
+    - rK e^{-rT} N(d_2) + qS e^{-qT} N(d_1)
+    $$
+
+    ---
+
+    **Monte Carlo Simulation (GBM)**  
+    For path-dependent and exotic structures, the underlying is simulated using Geometric Brownian Motion:
+
+    $$
+    dS_t = (r - q) S_t dt + \\sigma S_t dW_t
+    $$
+
+    Discretized form:
+
+    $$
+    S_{t+\\Delta t} = S_t \\exp\\left((r - q - 0.5\\sigma^2)\\Delta t + \\sigma \\sqrt{\\Delta t} Z\\right)
+    $$
+
+    where \( Z \\sim \\mathcal{N}(0,1) \).
+    """)
 
 st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
 st.markdown('<div class="section-title">Project Library</div>', unsafe_allow_html=True)
@@ -184,7 +262,7 @@ with c1:
     <div class="project-card">
         <div class="project-title">Portfolio Risk Engine</div>
         <div class="project-text">
-            Future module for portfolio VaR, CVaR, and allocation analytics.
+            Upcoming project focused on portfolio VaR, CVaR, and allocation analytics.
         </div>
         <div>
             <span class="tag">VaR</span>
@@ -198,7 +276,7 @@ with c2:
     <div class="project-card">
         <div class="project-title">Market Dashboard</div>
         <div class="project-text">
-            Future module for macro and equity market monitoring dashboards.
+            Upcoming project focused on macro and equity market monitoring dashboards.
         </div>
         <div>
             <span class="tag">Markets</span>
@@ -212,7 +290,7 @@ with c3:
     <div class="project-card">
         <div class="project-title">More Projects Coming</div>
         <div class="project-text">
-            Additional finance and analytics projects will be added over time.
+            A growing pipeline of finance and analytics projects currently in development.
         </div>
         <div>
             <span class="tag">Python</span>
