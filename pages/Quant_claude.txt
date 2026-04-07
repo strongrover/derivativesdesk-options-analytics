@@ -1,0 +1,1194 @@
+import streamlit as st
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+import plotly.express as px
+from plotly.subplots import make_subplots
+from scipy.stats import norm
+from scipy.optimize import brentq
+import yfinance as yf
+import datetime
+import warnings
+warnings.filterwarnings("ignore")
+
+# ── Page config ──────────────────────────────────────────────────────────────
+st.set_page_config(
+    page_title="QuantDesk · Options Analytics",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# ── Custom CSS ────────────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@300;400;500&display=swap');
+
+  html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+
+  .stApp { background: #0f0f0f; }
+  .main  { background: #0f0f0f; }
+
+  /* Sidebar — clean off-black */
+  section[data-testid="stSidebar"] {
+    background: #141414;
+    border-right: 1px solid #222;
+  }
+  section[data-testid="stSidebar"] * { color: #aaa !important; }
+  section[data-testid="stSidebar"] .stMarkdown strong { color: #ddd !important; }
+
+  /* Metric cards — minimal */
+  div[data-testid="metric-container"] {
+    background: #141414;
+    border: 1px solid #222;
+    border-radius: 6px;
+    padding: 14px 16px;
+  }
+  div[data-testid="metric-container"] label {
+    color: #555 !important;
+    font-size: 11px !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  div[data-testid="metric-container"] div[data-testid="stMetricValue"] {
+    color: #f0f0f0 !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 20px !important;
+  }
+  div[data-testid="stMetricDelta"] {
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 11px !important;
+  }
+
+  /* Typography */
+  h1, h2, h3 { color: #f0f0f0 !important; font-weight: 500 !important; }
+
+  /* Tabs — understated */
+  .stTabs [data-baseweb="tab-list"] {
+    background: transparent;
+    border-bottom: 1px solid #222;
+    gap: 0;
+  }
+  .stTabs [data-baseweb="tab"] {
+    color: #444 !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 11px !important;
+    letter-spacing: 0.5px;
+    padding: 10px 18px;
+    border-radius: 0;
+    background: transparent;
+  }
+  .stTabs [aria-selected="true"] {
+    color: #e8a87c !important;
+    border-bottom: 2px solid #e8a87c !important;
+    background: transparent !important;
+  }
+
+  /* Inputs */
+  .stSlider > div > div > div { background: #e8a87c !important; }
+  .stSelectbox > div > div {
+    background: #141414 !important;
+    border-color: #222 !important;
+    color: #ccc !important;
+  }
+
+  hr { border-color: #222 !important; }
+
+  /* Section label */
+  .section-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: #444;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #1e1e1e;
+    margin-bottom: 14px;
+  }
+
+  /* Price display */
+  .price-main {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 42px;
+    font-weight: 500;
+    color: #f0f0f0;
+    letter-spacing: -1px;
+    line-height: 1;
+  }
+  .price-currency {
+    font-size: 20px;
+    color: #555;
+    margin-right: 4px;
+  }
+
+  /* Insight box */
+  .insight-box {
+    background: #141414;
+    border-left: 3px solid #e8a87c;
+    padding: 12px 16px;
+    margin: 12px 0;
+    font-size: 13px;
+    color: #bbb;
+    line-height: 1.6;
+  }
+  .insight-box strong { color: #f0f0f0; }
+
+  /* Stat row */
+  .stat-row {
+    display: flex;
+    gap: 24px;
+    margin: 14px 0;
+    flex-wrap: wrap;
+  }
+  .stat-item { display: flex; flex-direction: column; gap: 2px; }
+  .stat-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: #444;
+  }
+  .stat-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    color: #ddd;
+  }
+  .stat-value.pos { color: #7ec8a0; }
+  .stat-value.neg { color: #c87e7e; }
+  .stat-value.amber { color: #e8a87c; }
+
+  /* Data table */
+  .stDataFrame { background: #141414 !important; }
+  .stInfo {
+    background: rgba(232,168,124,0.06) !important;
+    border-left-color: #e8a87c !important;
+    color: #aaa !important;
+  }
+
+  /* Radio */
+  .stRadio > div { flex-direction: row; gap: 16px; }
+
+  /* Header strip */
+  .header-strip {
+    padding: 16px 0 20px 0;
+    border-bottom: 1px solid #1e1e1e;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+  }
+  .header-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: #f0f0f0;
+    letter-spacing: 0.2px;
+  }
+  .header-meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: #444;
+    margin-top: 3px;
+  }
+  .header-right {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: #555;
+    text-align: right;
+  }
+  .data-source-dot {
+    display: inline-block;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    margin-right: 5px;
+    vertical-align: middle;
+  }
+</style>
+""", unsafe_allow_html=True)
+
+# ── Core Math Engine ──────────────────────────────────────────────────────────
+class BlackScholes:
+    """Full Black-Scholes pricing + Greeks engine."""
+
+    @staticmethod
+    def d1d2(S, K, T, sigma, r, q=0.0):
+        if T <= 0 or sigma <= 0:
+            return None, None
+        d1 = (np.log(S / K) + (r - q + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+        d2 = d1 - sigma * np.sqrt(T)
+        return d1, d2
+
+    @classmethod
+    def price(cls, S, K, T, sigma, r, option_type="call", q=0.0):
+        d1, d2 = cls.d1d2(S, K, T, sigma, r, q)
+        if d1 is None:
+            return max(S - K, 0) if option_type == "call" else max(K - S, 0)
+        if option_type == "call":
+            return S * np.exp(-q * T) * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
+        else:
+            return K * np.exp(-r * T) * norm.cdf(-d2) - S * np.exp(-q * T) * norm.cdf(-d1)
+
+    @classmethod
+    def greeks(cls, S, K, T, sigma, r, option_type="call", q=0.0):
+        d1, d2 = cls.d1d2(S, K, T, sigma, r, q)
+        if d1 is None:
+            return {g: 0.0 for g in ["delta", "gamma", "theta", "vega", "rho", "vanna", "charm", "volga"]}
+        phi = norm.pdf(d1)
+        Nd1 = norm.cdf(d1)
+        Nd2 = norm.cdf(d2)
+        Nd1m = norm.cdf(-d1)
+        Nd2m = norm.cdf(-d2)
+        sqrtT = np.sqrt(T)
+
+        delta = np.exp(-q * T) * (Nd1 if option_type == "call" else Nd1 - 1)
+        gamma = np.exp(-q * T) * phi / (S * sigma * sqrtT)
+        theta_call = (
+            -np.exp(-q * T) * S * phi * sigma / (2 * sqrtT)
+            - r * K * np.exp(-r * T) * Nd2
+            + q * S * np.exp(-q * T) * Nd1
+        ) / 365
+        theta_put = (
+            -np.exp(-q * T) * S * phi * sigma / (2 * sqrtT)
+            + r * K * np.exp(-r * T) * Nd2m
+            - q * S * np.exp(-q * T) * Nd1m
+        ) / 365
+        theta = theta_call if option_type == "call" else theta_put
+        vega = S * np.exp(-q * T) * phi * sqrtT / 100
+        rho_call = K * T * np.exp(-r * T) * Nd2 / 100
+        rho_put = -K * T * np.exp(-r * T) * Nd2m / 100
+        rho = rho_call if option_type == "call" else rho_put
+
+        # Higher-order greeks
+        vanna = -np.exp(-q * T) * phi * d2 / sigma
+        charm = -np.exp(-q * T) * (
+            phi * (2 * (r - q) * T - d2 * sigma * sqrtT) / (2 * T * sigma * sqrtT)
+            + (q if option_type == "call" else -q) * Nd1
+        )
+        volga = vega * d1 * d2 / sigma * 100
+
+        return {
+            "delta": delta, "gamma": gamma, "theta": theta,
+            "vega": vega, "rho": rho, "vanna": vanna,
+            "charm": charm, "volga": volga,
+        }
+
+    @classmethod
+    def implied_vol(cls, market_price, S, K, T, r, option_type="call", q=0.0):
+        """Brent's method implied vol solver."""
+        if T <= 0:
+            return np.nan
+        try:
+            intrinsic = max(S - K, 0) if option_type == "call" else max(K - S, 0)
+            if market_price <= intrinsic:
+                return np.nan
+            f = lambda sigma: cls.price(S, K, T, sigma, r, option_type, q) - market_price
+            return brentq(f, 1e-6, 10.0, xtol=1e-6, maxiter=500)
+        except Exception:
+            return np.nan
+
+
+class PhoenixOption:
+    """
+    Autocall Phoenix — pays coupon if spot > barrier on observation dates,
+    auto-called if spot > call barrier. Capital at risk below put barrier.
+    Monte Carlo pricing.
+    """
+
+    @staticmethod
+    def price(S, K, T, sigma, r, coupon_rate=0.08, call_barrier=1.0,
+              put_barrier=0.7, obs_freq=4, n_paths=20000, seed=42):
+        np.random.seed(seed)
+        dt = T / (obs_freq * T)
+        steps = int(obs_freq * T)
+        if steps < 1:
+            steps = 1
+        t_obs = np.linspace(dt, T, steps)
+
+        # GBM paths
+        Z = np.random.standard_normal((n_paths, steps))
+        log_returns = (r - 0.5 * sigma ** 2) * dt + sigma * np.sqrt(dt) * Z
+        S_paths = S * np.exp(np.cumsum(log_returns, axis=1))
+
+        payoffs = np.zeros(n_paths)
+        alive = np.ones(n_paths, dtype=bool)
+
+        for i, t in enumerate(t_obs):
+            spot = S_paths[:, i]
+            # Autocall
+            called = alive & (spot >= call_barrier * K)
+            payoffs[called] += (1 + coupon_rate * t) * K * np.exp(-r * t)
+            alive[called] = False
+            # Coupon
+            coupon_paid = alive & (spot >= put_barrier * K)
+            payoffs[coupon_paid] += coupon_rate * K / obs_freq * np.exp(-r * t)
+
+        # Maturity
+        final = S_paths[:, -1]
+        # Capital return if above put barrier
+        payoffs[alive & (final >= put_barrier * K)] += K * np.exp(-r * T)
+        # Capital at risk below put barrier
+        payoffs[alive & (final < put_barrier * K)] += final[alive & (final < put_barrier * K)] * np.exp(-r * T)
+
+        return np.mean(payoffs), np.std(payoffs) / np.sqrt(n_paths)
+
+
+class DigitalOption:
+    """Cash-or-nothing digital option."""
+
+    @staticmethod
+    def price(S, K, T, sigma, r, option_type="call"):
+        if T <= 0 or sigma <= 0:
+            return 0.0
+        d2 = (np.log(S / K) + (r - 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+        if option_type == "call":
+            return np.exp(-r * T) * norm.cdf(d2)
+        else:
+            return np.exp(-r * T) * norm.cdf(-d2)
+
+
+# ── CAC 40 Top 10 — ticker metadata ──────────────────────────────────────────
+CAC40_META = {
+    "LVMH (MC.PA)":               {"ticker": "MC.PA",    "sector": "Luxury",       "fallback_S": 658.2,  "fallback_sigma": 0.238},
+    "TotalEnergies (TTE.PA)":     {"ticker": "TTE.PA",   "sector": "Energy",       "fallback_S": 61.4,   "fallback_sigma": 0.213},
+    "Hermès (RMS.PA)":            {"ticker": "RMS.PA",   "sector": "Luxury",       "fallback_S": 2105.0, "fallback_sigma": 0.255},
+    "Sanofi (SAN.PA)":            {"ticker": "SAN.PA",   "sector": "Healthcare",   "fallback_S": 91.3,   "fallback_sigma": 0.198},
+    "Airbus (AIR.PA)":            {"ticker": "AIR.PA",   "sector": "Aerospace",    "fallback_S": 166.5,  "fallback_sigma": 0.268},
+    "Schneider Electric (SU.PA)": {"ticker": "SU.PA",    "sector": "Industrials",  "fallback_S": 233.8,  "fallback_sigma": 0.224},
+    "L'Oréal (OR.PA)":            {"ticker": "OR.PA",    "sector": "Consumer",     "fallback_S": 375.5,  "fallback_sigma": 0.207},
+    "BNP Paribas (BNP.PA)":       {"ticker": "BNP.PA",   "sector": "Banking",      "fallback_S": 68.2,   "fallback_sigma": 0.279},
+    "Stellantis (STLAM.PA)":      {"ticker": "STLAM.PA", "sector": "Automotive",   "fallback_S": 14.1,   "fallback_sigma": 0.312},
+    "Safran (SAF.PA)":            {"ticker": "SAF.PA",   "sector": "Aerospace",    "fallback_S": 242.6,  "fallback_sigma": 0.231},
+}
+
+# ── Live market data fetcher (cached 5 min) ───────────────────────────────────
+@st.cache_data(ttl=300)
+def fetch_live_data(ticker_symbol):
+    """
+    Fetch live spot price, daily change, and realised vol (30d) from Yahoo Finance.
+    Returns dict with S, sigma, change_pct, currency, last_updated.
+    Falls back to metadata if fetch fails (e.g. market closed, no internet).
+    """
+    try:
+        tkr = yf.Ticker(ticker_symbol)
+        hist = tkr.history(period="60d", interval="1d", auto_adjust=True)
+        if hist.empty or len(hist) < 5:
+            return None
+
+        spot = float(hist["Close"].iloc[-1])
+        prev = float(hist["Close"].iloc[-2])
+        change_pct = (spot - prev) / prev * 100
+
+        # Realised vol: annualised std of daily log returns over last 30 days
+        log_rets = np.log(hist["Close"] / hist["Close"].shift(1)).dropna()
+        sigma = float(log_rets.tail(30).std() * np.sqrt(252))
+
+        info = tkr.fast_info
+        currency = getattr(info, "currency", "EUR")
+        last_updated = hist.index[-1].strftime("%Y-%m-%d %H:%M UTC")
+
+        return {
+            "S": spot,
+            "sigma": max(sigma, 0.05),   # floor at 5% to avoid degenerate cases
+            "change_pct": change_pct,
+            "currency": currency,
+            "last_updated": last_updated,
+            "source": "live",
+        }
+    except Exception:
+        return None
+
+
+def get_ticker_data(name):
+    """Get live data for a ticker, with graceful fallback to hardcoded values."""
+    meta = CAC40_META[name]
+    live = fetch_live_data(meta["ticker"])
+    if live:
+        live["sector"] = meta["sector"]
+        return live
+    # Fallback
+    return {
+        "S": meta["fallback_S"],
+        "sigma": meta["fallback_sigma"],
+        "sector": meta["sector"],
+        "change_pct": 0.0,
+        "currency": "EUR",
+        "last_updated": "offline (cached)",
+        "source": "fallback",
+    }
+
+
+# Build CAC40_TICKERS dynamically — keep same interface as before
+@st.cache_data(ttl=300)
+def build_ticker_table():
+    result = {}
+    for name, meta in CAC40_META.items():
+        result[name] = get_ticker_data(name)
+    return result
+
+CAC40_TICKERS = build_ticker_table()
+
+# ── PLOTTING HELPERS ──────────────────────────────────────────────────────────
+PLOTLY_LAYOUT = dict(
+    paper_bgcolor="#0f0f0f",
+    plot_bgcolor="#141414",
+    font=dict(family="JetBrains Mono, monospace", color="#888", size=11),
+    xaxis=dict(gridcolor="#1e1e1e", linecolor="#222", zerolinecolor="#222"),
+    yaxis=dict(gridcolor="#1e1e1e", linecolor="#222", zerolinecolor="#222"),
+    margin=dict(l=50, r=20, t=40, b=50),
+    hovermode="x unified",
+)
+
+def apply_layout(fig, title="", **kwargs):
+    fig.update_layout(**PLOTLY_LAYOUT, title=dict(text=title, font=dict(color="#4a6a8a", size=12), x=0), **kwargs)
+    return fig
+
+
+# ── SIDEBAR ───────────────────────────────────────────────────────────────────
+with st.sidebar:
+    st.markdown("""
+    <div style='font-family:IBM Plex Mono,monospace;font-size:10px;
+                letter-spacing:2px;color:#4a6a8a;text-transform:uppercase;
+                padding-bottom:8px;border-bottom:1px solid #0e2040;margin-bottom:16px'>
+    QuantDesk · Parameters
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("**Underlying**")
+    selected_ticker = st.selectbox("CAC 40 Underlying", list(CAC40_TICKERS.keys()), label_visibility="collapsed")
+    ticker_data = CAC40_TICKERS[selected_ticker]
+
+    # Live data status badge
+    is_live = ticker_data.get("source") == "live"
+    change_pct = ticker_data.get("change_pct", 0.0)
+    last_updated = ticker_data.get("last_updated", "—")
+    change_color = "#7ec8a0" if change_pct >= 0 else "#c87e7e"
+    source_label = "🟢 LIVE · Yahoo Finance" if is_live else "🟡 OFFLINE · Cached"
+    st.markdown(f"""
+    <div style='background:#080f1c;border:1px solid #0e2040;border-radius:4px;
+                padding:8px 10px;font-family:IBM Plex Mono,monospace;font-size:9px;
+                margin-bottom:10px'>
+      <div style='color:#4a6a8a;letter-spacing:1px'>{source_label}</div>
+      <div style='color:{change_color};margin-top:2px'>Day change: {change_pct:+.2f}%</div>
+      <div style='color:#2a4a6a;margin-top:2px'>Updated: {last_updated}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    S = st.number_input("Spot Price (S)", value=float(ticker_data["S"]), step=0.5, format="%.2f")
+    K = st.number_input("Strike Price (K)", value=float(round(ticker_data["S"] * 1.02, 0)), step=0.5, format="%.2f")
+
+    st.markdown("---")
+    st.markdown("**Option Parameters**")
+    T_days = st.slider("Days to Expiry", 1, 730, 90)
+    T = T_days / 365.0
+    sigma = st.slider("Implied Vol (%)", 5.0, 100.0, float(ticker_data["sigma"] * 100), step=0.5) / 100.0
+    r = st.slider("Risk-Free Rate (%)", 0.0, 10.0, 3.5, step=0.05) / 100.0
+    q = st.slider("Dividend Yield (%)", 0.0, 8.0, 1.5, step=0.1) / 100.0
+    option_type = st.radio("Option Type", ["call", "put"], horizontal=True)
+
+    st.markdown("---")
+    st.markdown("**Position**")
+    quantity = st.number_input("Contracts (×100)", value=10, min_value=1, step=1)
+    entry_price = st.number_input("Entry Price (paid)", value=0.0, step=0.1, format="%.3f",
+                                   help="Leave 0 to use theoretical price")
+
+    st.markdown("---")
+    st.markdown("**Phoenix Parameters**")
+    coupon_rate = st.slider("Annual Coupon (%)", 2.0, 20.0, 8.0, step=0.5) / 100.0
+    call_barrier_pct = st.slider("Call Barrier (%)", 90, 110, 100, step=1)
+    put_barrier_pct = st.slider("Put Barrier (%)", 50, 90, 70, step=1)
+    n_mc = st.select_slider("MC Paths", [5000, 10000, 20000, 50000], value=20000)
+
+    # Manual refresh button
+    st.markdown("---")
+    if st.button("🔄 Refresh Market Data"):
+        st.cache_data.clear()
+        st.rerun()
+
+# ── MAIN CONTENT ─────────────────────────────────────────────────────────────
+
+
+
+# Compute current BS price and greeks
+bs_price = BlackScholes.price(S, K, T, sigma, r, option_type, q)
+greeks = BlackScholes.greeks(S, K, T, sigma, r, option_type, q)
+ep = entry_price if entry_price > 0 else bs_price
+position_value = bs_price * quantity * 100
+pnl_now = (bs_price - ep) * quantity * 100
+
+# Break-even and move required
+breakeven = K + bs_price if option_type == "call" else K - bs_price
+move_required = abs(breakeven - S) / S * 100
+annual_move = sigma * 100
+move_in_1sd = annual_move * np.sqrt(T)
+realistic = "within" if move_required < move_in_1sd else "outside"
+
+# Intrinsic / time value / moneyness
+intrinsic = max(S - K, 0) if option_type == "call" else max(K - S, 0)
+time_value = bs_price - intrinsic
+itm = (S > K and option_type == "call") or (S < K and option_type == "put")
+moneyness = S / K
+
+dot_color = "#7ec8a0" if is_live else "#888"
+source_text = "Yahoo Finance" if is_live else "cached"
+
+# ── HEADER ────────────────────────────────────────────────────────────────────
+st.markdown(f"""
+<div class='header-strip'>
+  <div>
+    <div class='header-name'>
+      Options Pricer &nbsp;·&nbsp; {selected_ticker.split("(")[0].strip()}
+    </div>
+    <div class='header-meta'>
+      {option_type.upper()} &nbsp;·&nbsp; Strike €{K:,.2f} &nbsp;·&nbsp; {T_days}d to expiry
+      &nbsp;·&nbsp;
+      <span style='color:{"#7ec8a0" if itm else "#c87e7e"}'>{"ITM" if itm else "OTM"}</span>
+    </div>
+  </div>
+  <div class='header-right'>
+    <div>Spot &nbsp;<span style='color:#ddd'>€{S:,.2f}</span>
+         &nbsp;<span style='color:{"#7ec8a0" if change_pct>=0 else "#c87e7e"}'>{change_pct:+.2f}%</span>
+    </div>
+    <div style='margin-top:3px'>
+      <span class='data-source-dot' style='background:{dot_color}'></span>
+      {source_text} &nbsp;·&nbsp; {last_updated}
+    </div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+# ── PRICE + GREEKS — one clean row ────────────────────────────────────────────
+col_price, col_greeks = st.columns([1, 3])
+
+with col_price:
+    st.markdown(f"""
+    <div style='padding: 4px 0 20px 0'>
+      <div style='font-family:JetBrains Mono,monospace;font-size:11px;
+                  color:#444;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px'>
+        Fair Value
+      </div>
+      <div class='price-main'>
+        <span class='price-currency'>€</span>{bs_price:.4f}
+      </div>
+      <div style='margin-top:14px;font-family:JetBrains Mono,monospace;font-size:11px;color:#555'>
+        Intrinsic &nbsp;<span style='color:#ddd'>€{intrinsic:.4f}</span>
+        &nbsp;&nbsp; Time &nbsp;<span style='color:#ddd'>€{time_value:.4f}</span>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col_greeks:
+    st.markdown(f"""
+    <div class='stat-row' style='padding-top:4px'>
+      <div class='stat-item'>
+        <span class='stat-label'>Delta</span>
+        <span class='stat-value amber'>{greeks['delta']:+.4f}</span>
+      </div>
+      <div class='stat-item'>
+        <span class='stat-label'>Gamma</span>
+        <span class='stat-value'>{greeks['gamma']:.5f}</span>
+      </div>
+      <div class='stat-item'>
+        <span class='stat-label'>Theta / day</span>
+        <span class='stat-value neg'>{greeks['theta']:.4f}</span>
+      </div>
+      <div class='stat-item'>
+        <span class='stat-label'>Vega / 1%</span>
+        <span class='stat-value'>{greeks['vega']:.4f}</span>
+      </div>
+      <div class='stat-item'>
+        <span class='stat-label'>Rho / 1%</span>
+        <span class='stat-value'>{greeks['rho']:.4f}</span>
+      </div>
+      <div class='stat-item'>
+        <span class='stat-label'>Vol (30d realised)</span>
+        <span class='stat-value'>{sigma*100:.1f}%</span>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ── INSIGHT LINE ──────────────────────────────────────────────────────────────
+st.markdown(f"""
+<div class='insight-box'>
+  Break-even at <strong>€{breakeven:,.2f}</strong> — requires a
+  <strong>{move_required:.1f}% move</strong> in {T_days} days.
+  At current vol ({sigma*100:.1f}%), a 1σ move over this period is
+  <strong>{move_in_1sd:.1f}%</strong> — break-even is <strong>{realistic} one standard deviation</strong>.
+</div>
+""", unsafe_allow_html=True)
+
+st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+# ── TABS ──────────────────────────────────────────────────────────────────────
+tabs = st.tabs([
+    "Pricer & Greeks",
+    "Payoff",
+    "Vol Surface",
+    "Scenarios",
+    "Backtest",
+    "Exotics",
+    "Greeks Table",
+])
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TAB 1 — PRICER & GREEKS
+# ═════════════════════════════════════════════════════════════════════════════
+with tabs[0]:
+    col_left, col_right = st.columns([1, 1])
+
+    with col_left:
+        st.markdown("<div class='section-header'>Black-Scholes Pricing</div>", unsafe_allow_html=True)
+
+        # Moneyness
+        moneyness = S / K
+        intrinsic = max(S - K, 0) if option_type == "call" else max(K - S, 0)
+        time_value = bs_price - intrinsic
+        itm = (S > K and option_type == "call") or (S < K and option_type == "put")
+
+        st.markdown(f"""
+        <div style='background:#080f1c;border:1px solid #0e2040;border-radius:4px;padding:20px;margin-bottom:16px'>
+          <div style='font-family:IBM Plex Mono,monospace;font-size:10px;color:#4a6a8a;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px'>
+            {option_type.upper()} · {selected_ticker.split("(")[0].strip()} · {T_days}d
+          </div>
+          <div class='price-badge'>€{bs_price:.4f}</div>
+          <div style='margin-top:12px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-family:IBM Plex Mono,monospace;font-size:11px'>
+            <div><div style='color:#4a6a8a;font-size:9px;letter-spacing:1px;text-transform:uppercase'>Intrinsic</div><div style='color:#e8f4ff'>€{intrinsic:.4f}</div></div>
+            <div><div style='color:#4a6a8a;font-size:9px;letter-spacing:1px;text-transform:uppercase'>Time Value</div><div style='color:#e8f4ff'>€{time_value:.4f}</div></div>
+            <div><div style='color:#4a6a8a;font-size:9px;letter-spacing:1px;text-transform:uppercase'>Moneyness</div>
+              <div style='color:{"#7ec8a0" if itm else "#d4856a"}'>{("ITM" if itm else "OTM")} {moneyness:.3f}x</div>
+            </div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Call vs Put comparison table
+        call_p = BlackScholes.price(S, K, T, sigma, r, "call", q)
+        put_p  = BlackScholes.price(S, K, T, sigma, r, "put", q)
+        call_g = BlackScholes.greeks(S, K, T, sigma, r, "call", q)
+        put_g  = BlackScholes.greeks(S, K, T, sigma, r, "put", q)
+
+        df_compare = pd.DataFrame({
+            "Metric": ["Price", "Delta", "Gamma", "Theta", "Vega", "Rho", "Vanna", "Volga"],
+            "Call": [f"€{call_p:.4f}", f"{call_g['delta']:.4f}", f"{call_g['gamma']:.5f}",
+                     f"{call_g['theta']:.4f}", f"{call_g['vega']:.4f}", f"{call_g['rho']:.4f}",
+                     f"{call_g['vanna']:.4f}", f"{call_g['volga']:.4f}"],
+            "Put":  [f"€{put_p:.4f}",  f"{put_g['delta']:.4f}",  f"{put_g['gamma']:.5f}",
+                     f"{put_g['theta']:.4f}",  f"{put_g['vega']:.4f}",  f"{put_g['rho']:.4f}",
+                     f"{put_g['vanna']:.4f}",  f"{put_g['volga']:.4f}"],
+        }).set_index("Metric")
+        st.dataframe(df_compare, use_container_width=True)
+
+        # Put-Call parity check
+        parity_lhs = call_p - put_p
+        parity_rhs = S * np.exp(-q * T) - K * np.exp(-r * T)
+        st.info(f"**Put-Call Parity:** C - P = {parity_lhs:.4f} | S·e⁻ᵠᵀ - K·e⁻ʳᵀ = {parity_rhs:.4f} | Diff = {abs(parity_lhs - parity_rhs):.6f}")
+
+    with col_right:
+        st.markdown("<div class='section-header'>Greeks Sensitivity (Spot Ladder)</div>", unsafe_allow_html=True)
+
+        spot_range = np.linspace(S * 0.7, S * 1.3, 120)
+        greek_sel = st.selectbox("Select Greek", ["delta", "gamma", "theta", "vega", "rho"], key="greek_sel")
+
+        vals = [BlackScholes.greeks(s, K, T, sigma, r, option_type, q)[greek_sel] for s in spot_range]
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=spot_range, y=vals,
+            mode="lines",
+            line=dict(color="#e8a87c", width=2),
+            fill="tozeroy",
+            fillcolor="rgba(0,212,255,0.06)",
+            name=greek_sel.capitalize(),
+            hovertemplate=f"S=€%{{x:.2f}}<br>{greek_sel}=%{{y:.5f}}<extra></extra>",
+        ))
+        fig.add_vline(x=S, line_dash="dash", line_color="#7ec8a0", annotation_text="Spot", annotation_font_color="#7ec8a0")
+        fig.add_vline(x=K, line_dash="dash", line_color="#d4c27a", annotation_text="Strike", annotation_font_color="#d4c27a")
+        apply_layout(fig, title=f"{greek_sel.capitalize()} vs Spot")
+        st.plotly_chart(fig, use_container_width=True)
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TAB 2 — PAYOFF & PROFILES
+# ═════════════════════════════════════════════════════════════════════════════
+with tabs[1]:
+    col1, col2 = st.columns(2)
+
+    spot_range = np.linspace(S * 0.60, S * 1.40, 200)
+
+    with col1:
+        st.markdown("<div class='section-header'>Payoff at Expiry</div>", unsafe_allow_html=True)
+
+        expiry_payoff = np.array([
+            BlackScholes.price(s, K, 0.0001, sigma, r, option_type, q) - ep
+            for s in spot_range
+        ]) * quantity * 100
+
+        now_payoff = np.array([
+            BlackScholes.price(s, K, T, sigma, r, option_type, q) - ep
+            for s in spot_range
+        ]) * quantity * 100
+
+        half_payoff = np.array([
+            BlackScholes.price(s, K, T / 2, sigma, r, option_type, q) - ep
+            for s in spot_range
+        ]) * quantity * 100
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=spot_range, y=now_payoff, name="Today", line=dict(color="#e8a87c", width=2)))
+        fig.add_trace(go.Scatter(x=spot_range, y=half_payoff, name="Halfway", line=dict(color="#d4c27a", width=1.5, dash="dot")))
+        fig.add_trace(go.Scatter(x=spot_range, y=expiry_payoff, name="Expiry", line=dict(color="#d4856a", width=2.5)))
+        fig.add_hline(y=0, line_color="rgba(255,255,255,0.2)", line_dash="dash")
+        fig.add_vline(x=K, line_color="#d4c27a", line_dash="dash", annotation_text="Strike")
+        fig.add_vline(x=S, line_color="#7ec8a0", line_dash="dash", annotation_text="Spot")
+        apply_layout(fig, "P&L by Spot (€)", yaxis_title="P&L (€)", xaxis_title="Spot Price (€)")
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col2:
+        st.markdown("<div class='section-header'>Greeks vs Time to Expiry</div>", unsafe_allow_html=True)
+
+        T_range = np.linspace(1 / 365, max(T, 30 / 365), 120)
+        greek_time = st.selectbox("Greek", ["delta", "gamma", "theta", "vega"], key="gt")
+        vals_t = [BlackScholes.greeks(S, K, t, sigma, r, option_type, q)[greek_time] for t in T_range]
+
+        fig2 = go.Figure()
+        fig2.add_trace(go.Scatter(
+            x=T_range * 365, y=vals_t,
+            mode="lines", line=dict(color="#d4856a", width=2),
+            fill="tozeroy", fillcolor="rgba(255,107,53,0.06)",
+        ))
+        fig2.add_vline(x=T_days, line_dash="dash", line_color="#e8a87c", annotation_text="Now")
+        apply_layout(fig2, f"{greek_time.capitalize()} vs Days to Expiry", xaxis_title="Days to Expiry")
+        st.plotly_chart(fig2, use_container_width=True)
+
+    # Vol sensitivity
+    st.markdown("<div class='section-header'>Price vs Volatility</div>", unsafe_allow_html=True)
+    vol_range = np.linspace(0.05, 1.0, 150)
+    prices_vol = [BlackScholes.price(S, K, T, v, r, option_type, q) for v in vol_range]
+
+    fig3 = go.Figure()
+    fig3.add_trace(go.Scatter(
+        x=vol_range * 100, y=prices_vol,
+        mode="lines", line=dict(color="#7ec8a0", width=2),
+        fill="tozeroy", fillcolor="rgba(57,255,20,0.05)",
+        hovertemplate="Vol=%{x:.1f}%<br>Price=€%{y:.4f}<extra></extra>",
+    ))
+    fig3.add_vline(x=sigma * 100, line_dash="dash", line_color="#d4c27a", annotation_text=f"Current {sigma*100:.1f}%")
+    apply_layout(fig3, "Option Price vs Implied Volatility (%)", xaxis_title="Implied Vol (%)", yaxis_title="Price (€)")
+    st.plotly_chart(fig3, use_container_width=True)
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TAB 3 — IMPLIED VOL SURFACE
+# ═════════════════════════════════════════════════════════════════════════════
+with tabs[2]:
+    st.markdown("<div class='section-header'>Implied Volatility Surface</div>", unsafe_allow_html=True)
+
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        smile_type = st.selectbox("Surface Model", ["Parametric Smile", "Flat", "Skew Only"])
+        show_2d = st.checkbox("Show 2D Heatmap", value=False)
+
+    # Surface data
+    strikes_pct = np.linspace(0.70, 1.30, 25)
+    expiries_d = np.array([7, 14, 30, 60, 90, 120, 180, 270, 365])
+    strike_vals = strikes_pct * S
+
+    IV_surface = np.zeros((len(expiries_d), len(strikes_pct)))
+    for j, t_days in enumerate(expiries_d):
+        t_yr = t_days / 365
+        for i, k_pct in enumerate(strikes_pct):
+            m = k_pct - 1  # moneyness
+            atm_vol = sigma
+            # Realistic skew + smile + term structure
+            skew = -0.04 * m / max(np.sqrt(t_yr), 0.05)
+            smile = 0.03 * m ** 2
+            term = 0.01 * np.sqrt(t_yr)
+            noise = np.random.default_rng(hash((j, i)) % (2 ** 32)).normal(0, 0.003)
+            if smile_type == "Flat":
+                IV_surface[j, i] = atm_vol
+            elif smile_type == "Skew Only":
+                IV_surface[j, i] = max(0.01, atm_vol + skew + term + noise)
+            else:
+                IV_surface[j, i] = max(0.01, atm_vol + skew + smile + term + noise)
+
+    K_grid, T_grid = np.meshgrid(strikes_pct * 100, expiries_d)
+
+    with col1:
+        if show_2d:
+            fig_vol = go.Figure(data=go.Heatmap(
+                z=IV_surface * 100,
+                x=[f"{k:.0f}%" for k in strikes_pct * 100],
+                y=[f"{d}d" for d in expiries_d],
+                colorscale=[[0, "#060d1a"], [0.3, "#1a3a6a"], [0.6, "#e8a87c"], [0.85, "#d4c27a"], [1, "#c87e7e"]],
+                hovertemplate="Strike=%{x}<br>Expiry=%{y}<br>IV=%{z:.1f}%<extra></extra>",
+                colorbar=dict(title="IV (%)", tickfont=dict(color="#c8dff5")),
+            ))
+            apply_layout(fig_vol, "Implied Volatility Surface (Heatmap)", xaxis_title="Strike (%)", yaxis_title="Expiry")
+        else:
+            fig_vol = go.Figure(data=go.Surface(
+                z=IV_surface * 100,
+                x=strikes_pct * 100,
+                y=expiries_d,
+                colorscale=[[0, "#060d1a"], [0.25, "#0e2040"], [0.5, "#e8a87c"], [0.75, "#d4c27a"], [1, "#c87e7e"]],
+                hovertemplate="Strike=%{x:.0f}%<br>T=%{y}d<br>IV=%{z:.1f}%<extra></extra>",
+                contours_z=dict(show=True, usecolormap=True, highlightcolor="#e8a87c", project_z=True),
+                opacity=0.88,
+            ))
+            fig_vol.update_layout(
+                **PLOTLY_LAYOUT,
+                scene=dict(
+                    xaxis=dict(title="Strike (%)", backgroundcolor="#060d1a", gridcolor="#0e2040", color="#c8dff5"),
+                    yaxis=dict(title="Days to Expiry", backgroundcolor="#060d1a", gridcolor="#0e2040", color="#c8dff5"),
+                    zaxis=dict(title="Implied Vol (%)", backgroundcolor="#060d1a", gridcolor="#0e2040", color="#c8dff5"),
+                    bgcolor="#060d1a",
+                ),
+                height=520,
+            )
+        st.plotly_chart(fig_vol, use_container_width=True)
+
+    # Vol smile for current expiry
+    st.markdown("<div class='section-header'>Vol Smile — Current Expiry</div>", unsafe_allow_html=True)
+    closest_idx = np.argmin(np.abs(expiries_d - T_days))
+    smile_vols = IV_surface[closest_idx, :]
+
+    fig_smile = go.Figure()
+    fig_smile.add_trace(go.Scatter(
+        x=strikes_pct * 100, y=smile_vols * 100,
+        mode="lines+markers",
+        line=dict(color="#d4856a", width=2.5),
+        marker=dict(color="#d4856a", size=5),
+        hovertemplate="Strike=%{x:.0f}%<br>IV=%{y:.2f}%<extra></extra>",
+    ))
+    fig_smile.add_vline(x=100, line_dash="dash", line_color="#e8a87c", annotation_text="ATM")
+    apply_layout(fig_smile, f"Vol Smile — {expiries_d[closest_idx]}d Expiry", xaxis_title="Strike (% of Spot)", yaxis_title="Implied Vol (%)")
+    st.plotly_chart(fig_smile, use_container_width=True)
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TAB 4 — P&L SCENARIOS
+# ═════════════════════════════════════════════════════════════════════════════
+with tabs[3]:
+    st.markdown("<div class='section-header'>Scenario Analysis — Spot & Vol Shock Grid</div>", unsafe_allow_html=True)
+
+    col_a, col_b = st.columns([1, 3])
+    with col_a:
+        spot_shocks = st.multiselect("Spot Shocks (%)", [-30,-20,-15,-10,-5,0,5,10,15,20,30], default=[-20,-10,-5,0,5,10,20])
+        vol_shocks  = st.multiselect("Vol Shocks (%pt)", [-10,-5,-3,0,3,5,10], default=[-5,0,5])
+        days_fwd    = st.slider("Days forward", 0, T_days, 0)
+
+    T_rem = max((T_days - days_fwd) / 365, 0.001)
+
+    with col_b:
+        rows = []
+        for vs in vol_shocks:
+            row = {"ΔVol": f"{vs:+d}%pt"}
+            for ss in spot_shocks:
+                s2 = S * (1 + ss / 100)
+                v2 = max(sigma + vs / 100, 0.01)
+                p2 = BlackScholes.price(s2, K, T_rem, v2, r, option_type, q)
+                pnl = (p2 - ep) * quantity * 100
+                row[f"S{ss:+d}%"] = pnl
+            rows.append(row)
+
+        df_scenario = pd.DataFrame(rows).set_index("ΔVol")
+
+        # Color-coded heatmap
+        fig_heat = go.Figure(data=go.Heatmap(
+            z=df_scenario.values,
+            x=df_scenario.columns.tolist(),
+            y=df_scenario.index.tolist(),
+            colorscale=[[0, "#7f0020"], [0.5, "#080f1c"], [1, "#006633"]],
+            zmid=0,
+            text=[[f"€{v:,.0f}" for v in row] for row in df_scenario.values],
+            texttemplate="%{text}",
+            hovertemplate="Spot=%{x}<br>ΔVol=%{y}<br>P&L=%{text}<extra></extra>",
+            colorbar=dict(title="P&L (€)", tickfont=dict(color="#c8dff5")),
+        ))
+        apply_layout(fig_heat, "P&L Scenario Grid (€)", xaxis_title="Spot Shock", yaxis_title="Vol Shock")
+        st.plotly_chart(fig_heat, use_container_width=True)
+
+    # Stress test table
+    st.markdown("<div class='section-header'>Risk Stress Tests</div>", unsafe_allow_html=True)
+    stress_scenarios = {
+        "Black Monday (-20% spot, +15% vol)":   (S * 0.80, sigma + 0.15),
+        "Tech Crash (-35% spot, +25% vol)":     (S * 0.65, sigma + 0.25),
+        "Melt-Up Rally (+20% spot, -10% vol)":  (S * 1.20, sigma - 0.10),
+        "Flash Crash (-15% spot, +30% vol)":    (S * 0.85, sigma + 0.30),
+        "Vol Spike Only (+20% vol)":             (S,         sigma + 0.20),
+        "Rate Shock (+2% rate)":                 (S,         sigma),
+        "Spot +10% only":                        (S * 1.10,  sigma),
+        "Spot -10% only":                        (S * 0.90,  sigma),
+    }
+    stress_rows = []
+    for label, (s2, v2) in stress_scenarios.items():
+        r2 = r + 0.02 if "Rate" in label else r
+        p2 = BlackScholes.price(s2, K, T, max(v2, 0.01), r2, option_type, q)
+        pnl = (p2 - ep) * quantity * 100
+        g2 = BlackScholes.greeks(s2, K, T, max(v2, 0.01), r2, option_type, q)
+        stress_rows.append({"Scenario": label, "Price": f"€{p2:.4f}", "P&L": f"€{pnl:+,.0f}",
+                             "Delta": f"{g2['delta']:.4f}", "Vega": f"{g2['vega']:.4f}"})
+    df_stress = pd.DataFrame(stress_rows).set_index("Scenario")
+    st.dataframe(df_stress, use_container_width=True)
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TAB 5 — BACKTEST
+# ═════════════════════════════════════════════════════════════════════════════
+with tabs[4]:
+    st.markdown("<div class='section-header'>P&L Backtest — Simulated Price Path</div>", unsafe_allow_html=True)
+
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        n_sims    = st.slider("Simulated Paths", 100, 5000, 1000, step=100)
+        hedge     = st.checkbox("Delta Hedge daily", value=True)
+        bt_seed   = st.number_input("Random Seed", 42, 9999, 42)
+        show_hist = st.checkbox("Show P&L Distribution", value=True)
+
+    with col2:
+        np.random.seed(int(bt_seed))
+        dt = 1 / 252
+        steps = T_days
+        n_show = min(n_sims, 30)
+
+        # GBM simulation
+        mu = r - q
+        Z = np.random.standard_normal((n_sims, steps))
+        log_ret = (mu - 0.5 * sigma ** 2) * dt + sigma * np.sqrt(dt) * Z
+        paths = S * np.exp(np.cumsum(log_ret, axis=1))
+        paths = np.hstack([np.full((n_sims, 1), S), paths])
+
+        t_axis = np.arange(steps + 1)
+
+        # Final P&L
+        if hedge:
+            # Delta-hedged P&L
+            final_pnls = []
+            for p in paths:
+                option_pnl = BlackScholes.price(p[-1], K, 0.0001, sigma, r, option_type, q) - ep
+                hedge_pnl = -greeks["delta"] * (p[-1] - p[0])
+                final_pnls.append((option_pnl + hedge_pnl) * quantity * 100)
+        else:
+            final_pnls = [(BlackScholes.price(p[-1], K, 0.0001, sigma, r, option_type, q) - ep) * quantity * 100 for p in paths]
+
+        fig_bt = go.Figure()
+        for i in range(n_show):
+            pnl_path = np.array([
+                (BlackScholes.price(paths[i, t], K, max((T_days - t) / 365, 0.0001), sigma, r, option_type, q) - ep) * quantity * 100
+                for t in range(steps + 1)
+            ])
+            color = f"rgba(0,212,255,0.12)" if pnl_path[-1] >= 0 else "rgba(255,51,102,0.12)"
+            fig_bt.add_trace(go.Scatter(x=t_axis, y=pnl_path, mode="lines",
+                                        line=dict(width=0.8, color=color), showlegend=False))
+
+        # Mean path
+        mean_pnl = np.array([
+            (BlackScholes.price(np.mean(paths[:, t]), K, max((T_days - t) / 365, 0.0001), sigma, r, option_type, q) - ep) * quantity * 100
+            for t in range(steps + 1)
+        ])
+        fig_bt.add_trace(go.Scatter(x=t_axis, y=mean_pnl, mode="lines",
+                                     line=dict(width=2.5, color="#d4c27a"), name="Mean path"))
+        fig_bt.add_hline(y=0, line_color="rgba(255,255,255,0.2)")
+        apply_layout(fig_bt, f"P&L Evolution — {n_sims} Paths ({'Delta-Hedged' if hedge else 'Unhedged'})",
+                     xaxis_title="Days", yaxis_title="P&L (€)")
+        st.plotly_chart(fig_bt, use_container_width=True)
+
+    if show_hist:
+        col_stats, col_hist = st.columns([1, 2])
+        with col_stats:
+            pnl_arr = np.array(final_pnls)
+            var_95  = np.percentile(pnl_arr, 5)
+            var_99  = np.percentile(pnl_arr, 1)
+            cvar_95 = pnl_arr[pnl_arr <= var_95].mean()
+            win_rate = (pnl_arr > 0).mean() * 100
+            st.markdown(f"""
+            <div style='background:#080f1c;border:1px solid #0e2040;border-radius:4px;padding:16px;font-family:IBM Plex Mono,monospace;font-size:12px'>
+              <div style='color:#4a6a8a;font-size:9px;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px'>Backtest Statistics</div>
+              <div style='display:grid;gap:8px'>
+                <div><span style='color:#4a6a8a'>Mean P&L</span><br><span style='color:#e8f4ff'>€{pnl_arr.mean():+,.0f}</span></div>
+                <div><span style='color:#4a6a8a'>Median P&L</span><br><span style='color:#e8f4ff'>€{np.median(pnl_arr):+,.0f}</span></div>
+                <div><span style='color:#4a6a8a'>Std Dev</span><br><span style='color:#e8f4ff'>€{pnl_arr.std():,.0f}</span></div>
+                <div><span style='color:#4a6a8a'>VaR 95%</span><br><span style='color:#c87e7e'>€{var_95:,.0f}</span></div>
+                <div><span style='color:#4a6a8a'>VaR 99%</span><br><span style='color:#c87e7e'>€{var_99:,.0f}</span></div>
+                <div><span style='color:#4a6a8a'>CVaR 95%</span><br><span style='color:#c87e7e'>€{cvar_95:,.0f}</span></div>
+                <div><span style='color:#4a6a8a'>Win Rate</span><br><span style='color:#7ec8a0'>{win_rate:.1f}%</span></div>
+                <div><span style='color:#4a6a8a'>Max Loss</span><br><span style='color:#c87e7e'>€{pnl_arr.min():,.0f}</span></div>
+                <div><span style='color:#4a6a8a'>Max Gain</span><br><span style='color:#7ec8a0'>€{pnl_arr.max():,.0f}</span></div>
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
+        with col_hist:
+            fig_hist = go.Figure()
+            fig_hist.add_trace(go.Histogram(
+                x=pnl_arr, nbinsx=60,
+                marker_color="#e8a87c", opacity=0.7,
+                hovertemplate="P&L=%{x:,.0f}<br>Count=%{y}<extra></extra>",
+            ))
+            fig_hist.add_vline(x=0, line_color="white", line_dash="dash")
+            fig_hist.add_vline(x=var_95, line_color="#c87e7e", line_dash="dot", annotation_text="VaR 95%")
+            fig_hist.add_vline(x=var_99, line_color="#ff0000", line_dash="dot", annotation_text="VaR 99%")
+            apply_layout(fig_hist, "P&L Distribution", xaxis_title="P&L (€)", yaxis_title="Frequency")
+            st.plotly_chart(fig_hist, use_container_width=True)
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TAB 6 — EXOTICS
+# ═════════════════════════════════════════════════════════════════════════════
+with tabs[5]:
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("<div class='section-header'>Phoenix Autocall Note (Monte Carlo)</div>", unsafe_allow_html=True)
+
+        with st.spinner("Running Monte Carlo simulation…"):
+            ph_price, ph_stderr = PhoenixOption.price(
+                S=S, K=K, T=T, sigma=sigma, r=r,
+                coupon_rate=coupon_rate,
+                call_barrier=call_barrier_pct / 100,
+                put_barrier=put_barrier_pct / 100,
+                n_paths=n_mc,
+            )
+
+        st.markdown(f"""
+        <div style='background:#080f1c;border:1px solid #0e2040;border-radius:4px;padding:20px;margin-bottom:16px'>
+          <div style='font-family:IBM Plex Mono,monospace;font-size:10px;color:#4a6a8a;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px'>
+            PHOENIX AUTOCALL
+          </div>
+          <div class='price-badge'>€{ph_price:.4f}</div>
+          <div style='font-family:IBM Plex Mono,monospace;font-size:10px;color:#4a6a8a;margin-top:6px'>
+            95% CI: [€{ph_price-1.96*ph_stderr:.4f}, €{ph_price+1.96*ph_stderr:.4f}]
+            &nbsp;·&nbsp; SE = {ph_stderr:.4f}
+          </div>
+          <div style='margin-top:12px;font-family:IBM Plex Mono,monospace;font-size:11px;display:grid;grid-template-columns:1fr 1fr;gap:8px'>
+            <div><span style='color:#4a6a8a'>Coupon</span><br><span style='color:#e8f4ff'>{coupon_rate*100:.1f}% p.a.</span></div>
+            <div><span style='color:#4a6a8a'>MC Paths</span><br><span style='color:#e8f4ff'>{n_mc:,}</span></div>
+            <div><span style='color:#4a6a8a'>Call Barrier</span><br><span style='color:#7ec8a0'>{call_barrier_pct}% of K</span></div>
+            <div><span style='color:#4a6a8a'>Put Barrier</span><br><span style='color:#c87e7e'>{put_barrier_pct}% of K</span></div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Phoenix vs coupon rate
+        coupons = np.linspace(0.02, 0.20, 30)
+        phoenix_prices = [PhoenixOption.price(S, K, T, sigma, r, c, call_barrier_pct/100, put_barrier_pct/100, n_paths=5000)[0] for c in coupons]
+
+        fig_ph = go.Figure()
+        fig_ph.add_trace(go.Scatter(
+            x=coupons * 100, y=phoenix_prices,
+            mode="lines+markers",
+            line=dict(color="#d4856a", width=2.5),
+            marker=dict(color="#d4856a", size=4),
+            hovertemplate="Coupon=%{x:.1f}%<br>Price=€%{y:.4f}<extra></extra>",
+        ))
+        fig_ph.add_vline(x=coupon_rate * 100, line_dash="dash", line_color="#d4c27a")
+        apply_layout(fig_ph, "Phoenix Price vs Coupon Rate", xaxis_title="Coupon Rate (%)", yaxis_title="Price (€)")
+        st.plotly_chart(fig_ph, use_container_width=True)
+
+    with col2:
+        st.markdown("<div class='section-header'>Digital (Cash-or-Nothing) Option</div>", unsafe_allow_html=True)
+
+        dig_call = DigitalOption.price(S, K, T, sigma, r, "call")
+        dig_put  = DigitalOption.price(S, K, T, sigma, r, "put")
+
+        st.markdown(f"""
+        <div style='background:#080f1c;border:1px solid #0e2040;border-radius:4px;padding:20px;margin-bottom:16px'>
+          <div style='font-family:IBM Plex Mono,monospace;font-size:10px;color:#4a6a8a;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px'>
+            DIGITAL OPTION
+          </div>
+          <div style='display:grid;grid-template-columns:1fr 1fr;gap:16px;font-family:IBM Plex Mono,monospace'>
+            <div>
+              <div style='font-size:9px;color:#4a6a8a;letter-spacing:1px;text-transform:uppercase'>Call (prob)</div>
+              <div style='font-size:28px;color:#7ec8a0;font-weight:600'>{dig_call:.4f}</div>
+              <div style='font-size:9px;color:#4a6a8a'>≈ {dig_call*100:.1f}% chance S>K</div>
+            </div>
+            <div>
+              <div style='font-size:9px;color:#4a6a8a;letter-spacing:1px;text-transform:uppercase'>Put (prob)</div>
+              <div style='font-size:28px;color:#c87e7e;font-weight:600'>{dig_put:.4f}</div>
+              <div style='font-size:9px;color:#4a6a8a'>≈ {dig_put*100:.1f}% chance S&lt;K</div>
+            </div>
+          </div>
+          <div style='margin-top:8px;font-size:10px;color:#4a6a8a;font-family:IBM Plex Mono,monospace'>
+            Sum = {dig_call+dig_put:.6f} (should ≈ e^(-rT) = {np.exp(-r*T):.6f})
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Digital vs strike range
+        k_range = np.linspace(S * 0.7, S * 1.3, 100)
+        dig_c = [DigitalOption.price(S, k, T, sigma, r, "call") for k in k_range]
+        dig_p = [DigitalOption.price(S, k, T, sigma, r, "put")  for k in k_range]
+
+        fig_dig = go.Figure()
+        fig_dig.add_trace(go.Scatter(x=k_range, y=dig_c, name="Digital Call", line=dict(color="#7ec8a0", width=2)))
+        fig_dig.add_trace(go.Scatter(x=k_range, y=dig_p, name="Digital Put",  line=dict(color="#c87e7e", width=2)))
+        fig_dig.add_vline(x=S, line_dash="dash", line_color="#e8a87c", annotation_text="Spot")
+        fig_dig.add_vline(x=K, line_dash="dash", line_color="#d4c27a", annotation_text="Strike")
+        apply_layout(fig_dig, "Digital Option Price vs Strike", xaxis_title="Strike (€)", yaxis_title="Price (probability)")
+        st.plotly_chart(fig_dig, use_container_width=True)
+
+        # Comparison: vanilla vs digital
+        st.markdown("<div class='section-header'>Vanilla vs Digital Call</div>", unsafe_allow_html=True)
+        van = [BlackScholes.price(s, K, T, sigma, r, "call", q) for s in np.linspace(S*0.7, S*1.3, 100)]
+        dig = [DigitalOption.price(s, K, T, sigma, r, "call") * K for s in np.linspace(S*0.7, S*1.3, 100)]
+        s_rng = np.linspace(S*0.7, S*1.3, 100)
+
+        fig_vd = go.Figure()
+        fig_vd.add_trace(go.Scatter(x=s_rng, y=van, name="Vanilla Call", line=dict(color="#e8a87c", width=2)))
+        fig_vd.add_trace(go.Scatter(x=s_rng, y=dig, name=f"Digital×K", line=dict(color="#d4c27a", width=2, dash="dot")))
+        apply_layout(fig_vd, "Vanilla vs Digital Call", xaxis_title="Spot (€)", yaxis_title="Value (€)")
+        st.plotly_chart(fig_vd, use_container_width=True)
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TAB 7 — GREEKS TABLE (full grid)
+# ═════════════════════════════════════════════════════════════════════════════
+with tabs[6]:
+    st.markdown("<div class='section-header'>Greeks Ladder — All CAC 40 Underlyings</div>", unsafe_allow_html=True)
+
+    rows = []
+    for name, data in CAC40_TICKERS.items():
+        s_ = data["S"]
+        k_ = round(s_ * 1.02, 1)
+        g_ = BlackScholes.greeks(s_, k_, T, data["sigma"], r, option_type, q)
+        p_ = BlackScholes.price(s_, k_, T, data["sigma"], r, option_type, q)
+        rows.append({
+            "Ticker": name.split("(")[0].strip(),
+            "Spot":  f"€{s_:,.2f}",
+            "Strike": f"€{k_:,.1f}",
+            "Vol":  f"{data['sigma']*100:.1f}%",
+            "Price": f"€{p_:.4f}",
+            "Delta": f"{g_['delta']:.4f}",
+            "Gamma": f"{g_['gamma']:.5f}",
+            "Theta": f"{g_['theta']:.4f}",
+            "Vega":  f"{g_['vega']:.4f}",
+            "Rho":   f"{g_['rho']:.4f}",
+            "Vanna": f"{g_['vanna']:.4f}",
+            "Volga": f"{g_['volga']:.4f}",
+        })
+    df_all = pd.DataFrame(rows).set_index("Ticker")
+    st.dataframe(df_all, use_container_width=True, height=420)
+
+    st.markdown("<div class='section-header'>Greeks Heatmap Across Strikes & Vols</div>", unsafe_allow_html=True)
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        heatmap_greek = st.selectbox("Greek to map", ["delta", "gamma", "theta", "vega", "rho"])
+        n_strikes = 20
+        n_vols = 20
+    with col2:
+        k_arr = np.linspace(S * 0.75, S * 1.25, n_strikes)
+        v_arr = np.linspace(0.05, 0.60, n_vols)
+        Z_g = np.array([[BlackScholes.greeks(S, k, T, v, r, option_type, q)[heatmap_greek]
+                          for k in k_arr] for v in v_arr])
+        fig_gh = go.Figure(data=go.Heatmap(
+            z=Z_g,
+            x=[f"€{k:.0f}" for k in k_arr],
+            y=[f"{v*100:.0f}%" for v in v_arr],
+            colorscale=[[0, "#7f0020"], [0.5, "#080f1c"], [1, "#003366"]],
+            zmid=0,
+            colorbar=dict(title=heatmap_greek.capitalize(), tickfont=dict(color="#c8dff5")),
+            hovertemplate="K=%{x}<br>Vol=%{y}<br>Value=%{z:.5f}<extra></extra>",
+        ))
+        apply_layout(fig_gh, f"{heatmap_greek.capitalize()} — Strike × Vol Grid",
+                     xaxis_title="Strike (€)", yaxis_title="Implied Vol")
+        st.plotly_chart(fig_gh, use_container_width=True)
+
+# ── FOOTER ────────────────────────────────────────────────────────────────────
+st.markdown("""
+<hr style='border-color:#0e2040;margin:20px 0 10px'>
+<div style='font-family:IBM Plex Mono,monospace;font-size:9px;color:#2a4a6a;text-align:center;letter-spacing:1.5px'>
+  QUANTDESK · OPTIONS ANALYTICS ENGINE · BLACK-SCHOLES · MONTE CARLO · CAC 40
+  &nbsp;·&nbsp; FOR EDUCATIONAL & RESEARCH PURPOSES ONLY
+</div>
+""", unsafe_allow_html=True)
